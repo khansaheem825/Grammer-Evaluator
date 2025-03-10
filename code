@@ -1,0 +1,73 @@
+import re
+import spacy
+from spacy_langdetect import LanguageDetector
+from spacy.language import Language  # Import Language class for registration
+nlp = spacy.load("en_core_web_sm")
+
+Language.factory("language_detector", func=lambda nlp, name: LanguageDetector())
+nlp.add_pipe("language_detector", last=True)
+
+def check_criteria(text):
+    issues = []
+
+    if any(token.tag_ in ["VBD", "VBN"] for token in nlp(text)):
+        issues.append("Avoid statements that refer to the past.")
+
+    if any(word in text.lower() for word in ["is", "was", "are", "were", "always"]):
+        issues.append("Avoid statements that are purely factual.")
+
+    if re.search(r'(almost everyone|most people|some farmers)', text):
+        issues.append("Avoid ambiguous statements.")
+
+    if re.search(r'(everyone|no one|always|never)', text):
+        issues.append("Avoid universally endorsed or rejected statements.")
+
+    if len(text.split()) > 20:
+        issues.append("Keep statements short and direct (under 20 words).")
+
+    if len(list(nlp(text).sents)) > 1:
+        issues.append("Each statement should contain only one complete thought.")
+
+    if re.search(r'(all|always|none|never)', text):
+        issues.append("Avoid universal words.")
+
+    if re.search(r'\b(only|just|merely)\b', text):
+        issues.append("Use words like 'only' with care.")
+
+    if re.search(r'(,|and|but)', text):
+        issues.append("Prefer simple sentences over compound/complex ones.")
+
+    difficult_words = [token.text for token in nlp(text) if token.is_alpha and token.doc._.language['language'] != 'en']
+
+
+    if difficult_words:
+        issues.append(f"Avoid hard-to-understand words: {', '.join(difficult_words)}")
+
+    if re.search(r'(not.*not|never.*no)', text):
+        issues.append("Avoid double negatives.")
+
+    return issues
+
+
+# Example data
+raw_statements = [
+    "I think that Kankrej is competent cow to get 900 liter milk production",
+    "I believe that Murrah Buffalo is a good quality milch animal, so prefer all the farmers",
+    "I think bio-control method is the most never found effective of all methods of pest control."
+]
+
+# Clean and validate
+for i, statement in enumerate(raw_statements):
+    issues = check_criteria(statement)
+    if issues:
+        print(f"Statement {i + 1} has issues:")
+        for issue in issues:
+            print(f"- {issue}")
+        print("\n")
+    else:
+        print(f"Statement {i + 1} is valid!\n")
+
+
+
+
+  
