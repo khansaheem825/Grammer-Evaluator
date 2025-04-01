@@ -1,73 +1,79 @@
-import re
-import spacy
-from spacy_langdetect import LanguageDetector
-from spacy.language import Language  # Import Language class for registration
-nlp = spacy.load("en_core_web_sm")
+import os
+import streamlit as st
+import google.generativeai as genai
 
-Language.factory("language_detector", func=lambda nlp, name: LanguageDetector())
-nlp.add_pipe("language_detector", last=True)
+API_KEY = os.getenv("GEMINI_API_KEY")
 
-def check_criteria(text):
-    issues = []
+if not API_KEY:
+    st.error("❌ API Key is missing! Set GEMINI_API_KEY in your environment variables.")
+    st.stop()
 
-    if any(token.tag_ in ["VBD", "VBN"] for token in nlp(text)):
-        issues.append("Avoid statements that refer to the past.")
+genai.configure(api_key=API_KEY)
 
-    if any(word in text.lower() for word in ["is", "was", "are", "were", "always"]):
-        issues.append("Avoid statements that are purely factual.")
-
-    if re.search(r'(almost everyone|most people|some farmers)', text):
-        issues.append("Avoid ambiguous statements.")
-
-    if re.search(r'(everyone|no one|always|never)', text):
-        issues.append("Avoid universally endorsed or rejected statements.")
-
-    if len(text.split()) > 20:
-        issues.append("Keep statements short and direct (under 20 words).")
-
-    if len(list(nlp(text).sents)) > 1:
-        issues.append("Each statement should contain only one complete thought.")
-
-    if re.search(r'(all|always|none|never)', text):
-        issues.append("Avoid universal words.")
-
-    if re.search(r'\b(only|just|merely)\b', text):
-        issues.append("Use words like 'only' with care.")
-
-    if re.search(r'(,|and|but)', text):
-        issues.append("Prefer simple sentences over compound/complex ones.")
-
-    difficult_words = [token.text for token in nlp(text) if token.is_alpha and token.doc._.language['language'] != 'en']
+# Evaluation Criteria
+EVALUATION_CRITERIA = """
+Evaluate the given text based on these 14 rules:
+1. Avoid statements referring to the past instead of the present.
+2. Avoid factual statements or those that could be interpreted as such.
+3. Avoid ambiguity and ensure clarity in meaning.
+4. Ensure relevance to the intended topic or psychological object.
+5. Avoid statements that would be universally accepted or rejected.
+6. Cover the full range of the effective scale of interest.
+7. Use simple, clear, and direct language.
+8. Keep statements short (preferably under 20 words).
+9. Each statement should express only one complete thought.
+10. Avoid universal terms such as all, always, none, and never.
+11. Use words like only, just, merely with caution.
+12. Prefer simple sentences over complex or compound ones.
+13. Avoid jargon or words that may confuse the target audience.
+14. Eliminate double negatives.
+"""
 
 
-    if difficult_words:
-        issues.append(f"Avoid hard-to-understand words: {', '.join(difficult_words)}")
+#  Function to Evaluate and Correct Text
+def evaluate_text(text):
+    prompt = f"""
+    You are an AI assistant skilled in grammar correction and structural refinement.
+    Analyze the following text based on the 14 rules and provide:
+    - A brief summary of errors found.
+    - A revised version of the sentence with corrections.
 
-    if re.search(r'(not.*not|never.*no)', text):
-        issues.append("Avoid double negatives.")
+    **Text to Evaluate:**
+    "{text}"
 
-    return issues
+    **Evaluation Criteria:**
+    {EVALUATION_CRITERIA}
+
+    **Expected Response:**
+    - Identified issues (if any).
+    - Corrected sentence.
+    """
+
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")  # ✅ More advanced model
+        response = model.generate_content(prompt)
+        return response.text.strip()
+
+    except Exception as e:
+        return f"⚠️ Error processing request: {e}"
 
 
-# Example data
-raw_statements = [
-    "I think that Kankrej is competent cow to get 900 liter milk production",
-    "I believe that Murrah Buffalo is a good quality milch animal, so prefer all the farmers",
-    "I think bio-control method is the most never found effective of all methods of pest control."
-]
+#  Streamlit UI
+st.set_page_config(page_title="AI Sentence Evaluator", page_icon="📝", layout="centered")
 
-# Clean and validate
-for i, statement in enumerate(raw_statements):
-    issues = check_criteria(statement)
-    if issues:
-        print(f"Statement {i + 1} has issues:")
-        for issue in issues:
-            print(f"- {issue}")
-        print("\n")
+st.title("🔍 AI Sentence Evaluator")
+st.write("Analyze and improve your sentences based on grammar and structure rules.")
+
+# User Input
+user_text = st.text_area("✏️ Enter your text below:", placeholder="Type your sentence here...")
+
+if st.button("Analyze Text"):
+    if user_text.strip():
+        feedback = evaluate_text(user_text)
+        st.subheader("✅ Feedback & Suggestions:")
+        st.write(feedback)
     else:
-        print(f"Statement {i + 1} is valid!\n")
+        st.warning("⚠️ Please enter text before clicking 'Analyze Text'.")
 
-
-
-
-  
+st.markdown("---")
+st.write("🚀 Developed with ❤️ using Streamlit & Gemini AI.")
